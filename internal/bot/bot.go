@@ -114,36 +114,29 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 		return
 	}
 	text := strings.TrimSpace(msg.Text)
-	st := b.state.get(msg.From.ID)
 
-	switch {
-	case strings.HasPrefix(text, "/start"):
-		b.reply(msg.Chat.ID, "Добро пожаловать в бронь кабинетов! Используйте /book для создания заявки.")
-	case strings.HasPrefix(text, "/help"):
-		b.reply(msg.Chat.ID, "Доступные команды: /book, /my_bookings, /cancel_booking <id>, /help")
-	case strings.HasPrefix(text, "/book"):
-		b.startBookingFlow(ctx, msg)
-	case strings.HasPrefix(text, "/my_bookings"):
-		b.handleMyBookings(ctx, msg)
-	case strings.HasPrefix(text, "/cancel_booking"):
-		b.handleCancelBooking(ctx, msg)
-	default:
-		// flow text steps
-		switch st.Step {
-		case stepClientName:
-			st.Draft.ClientName = text
-			st.Step = stepClientPhone
-			b.reply(msg.Chat.ID, "Введите телефон клиента:")
+	// All commands take priority and interrupt any active flow
+	if strings.HasPrefix(text, "/") {
+		switch {
+		case strings.HasPrefix(text, "/start"):
+			b.state.reset(msg.From.ID)
+			b.reply(msg.Chat.ID, "Добро пожаловать в бронь кабинетов! Используйте /book для создания заявки.")
 			return
-		case stepClientPhone:
-			phone, ok := normalizeAndValidatePhone(text)
-			if !ok {
-				b.reply(msg.Chat.ID, "Некорректный телефон. Пример: +7 999 123-45-67")
-				return
-			}
-			st.Draft.ClientPhone = phone
-			st.Step = stepConfirm
-			b.sendConfirm(msg.Chat.ID, msg.From.ID)
+		case strings.HasPrefix(text, "/help"):
+			b.reply(msg.Chat.ID, "Доступные команды: /book, /my_bookings, /cancel_booking <id>, /cancel, /help")
+			return
+		case strings.HasPrefix(text, "/book"):
+			b.startBookingFlow(ctx, msg)
+			return
+		case strings.HasPrefix(text, "/my_bookings"):
+			b.handleMyBookings(ctx, msg)
+			return
+		case strings.HasPrefix(text, "/cancel_booking"):
+			b.handleCancelBooking(ctx, msg)
+			return
+		case strings.HasPrefix(text, "/cancel"):
+			b.state.reset(msg.From.ID)
+			b.reply(msg.Chat.ID, "Операция отменена. /book чтобы начать заново")
 			return
 		}
 
@@ -152,6 +145,27 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 				return
 			}
 		}
+		// If unknown command, we could either ignore it or handle as text if needed.
+		// For now, treat unknown commands as potential cancellations of steps.
+	}
+
+	st := b.state.get(msg.From.ID)
+	switch st.Step {
+	case stepClientName:
+		st.Draft.ClientName = text
+		st.Step = stepClientPhone
+		b.reply(msg.Chat.ID, "Введите телефон клиента:")
+		return
+	case stepClientPhone:
+		phone, ok := normalizeAndValidatePhone(text)
+		if !ok {
+			b.reply(msg.Chat.ID, "Некорректный телефон. Пример: +7 999 123-45-67")
+			return
+		}
+		st.Draft.ClientPhone = phone
+		st.Step = stepConfirm
+		b.sendConfirm(msg.Chat.ID, msg.From.ID)
+		return
 	}
 }
 
