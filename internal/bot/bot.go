@@ -25,7 +25,7 @@ type Bot struct {
 	api      *crmapi.BronivikClient
 	db       *db.DB
 	managers map[int64]struct{}
-	bot      *tgbotcrmapi.BotAPI
+	bot      *tgbotapi.BotAPI
 	state    *stateStore
 	rules    BookingRules
 	logger   *zerolog.Logger
@@ -47,7 +47,7 @@ func New(
 	rules BookingRules,
 	logger *zerolog.Logger,
 ) (*Bot, error) {
-	b, err := tgbotcrmapi.NewBotAPI(token)
+	b, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func New(
 
 // Start begins polling updates and handles commands.
 func (b *Bot) Start(ctx context.Context) {
-	u := tgbotcrmapi.NewUpdate(0)
+	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates := b.bot.GetUpdatesChan(u)
 	b.logger.Info().Str("username", b.bot.Self.UserName).Msg("CRM bot authorized")
@@ -87,7 +87,7 @@ func (b *Bot) Start(ctx context.Context) {
 	}
 }
 
-func (b *Bot) handleUpdate(ctx context.Context, update *tgbotcrmapi.Update) {
+func (b *Bot) handleUpdate(ctx context.Context, update *tgbotapi.Update) {
 	l := zerolog.Ctx(ctx)
 	if update.CallbackQuery != nil {
 		l.Debug().
@@ -107,7 +107,7 @@ func (b *Bot) handleUpdate(ctx context.Context, update *tgbotcrmapi.Update) {
 	}
 }
 
-func (b *Bot) handleMessage(ctx context.Context, msg *tgbotcrmapi.Message) {
+func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	if msg == nil {
 		return
 	}
@@ -153,7 +153,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotcrmapi.Message) {
 	}
 }
 
-func (b *Bot) handleCallback(ctx context.Context, cq *tgbotcrmapi.CallbackQuery) {
+func (b *Bot) handleCallback(ctx context.Context, cq *tgbotapi.CallbackQuery) {
 	if cq == nil {
 		return
 	}
@@ -258,7 +258,7 @@ func (b *Bot) handleSlotCallback(ctx context.Context, chatID, userID int64, st *
 		return
 	}
 	if b.api != nil && st.Draft.ItemName != "" {
-		avail, err := b.crmapi.GetAvailability(ctx, st.Draft.ItemName, st.Draft.Date)
+		avail, err := b.api.GetAvailability(ctx, st.Draft.ItemName, st.Draft.Date)
 		if err != nil || avail == nil || !avail.Available {
 			b.reply(chatID, "Аппарат недоступен на эту дату. Выберите другой аппарат или 'Без аппарата'.")
 			st.Step = stepItem
@@ -271,7 +271,7 @@ func (b *Bot) handleSlotCallback(ctx context.Context, chatID, userID int64, st *
 	b.reply(chatID, "Введите ФИО клиента:")
 }
 
-func (b *Bot) handleConfirmCallback(ctx context.Context, chatID, userID int64, cq *tgbotcrmapi.CallbackQuery, st *userState) {
+func (b *Bot) handleConfirmCallback(ctx context.Context, chatID, userID int64, cq *tgbotapi.CallbackQuery, st *userState) {
 	if st.Step != stepConfirm {
 		b.reply(chatID, "Сценарий устарел, начните заново: /book")
 		return
@@ -354,7 +354,7 @@ func (b *Bot) validateBookingTime(start time.Time) error {
 	return nil
 }
 
-func (b *Bot) handleManagerCommands(msg *tgbotcrmapi.Message) bool {
+func (b *Bot) handleManagerCommands(msg *tgbotapi.Message) bool {
 	text := msg.Text
 	switch {
 	case strings.HasPrefix(text, "/add_cabinet"):
@@ -383,7 +383,7 @@ func (b *Bot) handleManagerCommands(msg *tgbotcrmapi.Message) bool {
 	return true
 }
 
-func (b *Bot) handleMyBookings(ctx context.Context, msg *tgbotcrmapi.Message) {
+func (b *Bot) handleMyBookings(ctx context.Context, msg *tgbotapi.Message) {
 	if msg == nil || msg.From == nil {
 		return
 	}
@@ -429,7 +429,7 @@ func (b *Bot) handleMyBookings(ctx context.Context, msg *tgbotcrmapi.Message) {
 	b.reply(msg.Chat.ID, sb.String())
 }
 
-func (b *Bot) handleCancelBooking(ctx context.Context, msg *tgbotcrmapi.Message) {
+func (b *Bot) handleCancelBooking(ctx context.Context, msg *tgbotapi.Message) {
 	if msg == nil || msg.From == nil {
 		return
 	}
@@ -468,7 +468,7 @@ func (b *Bot) handleCancelBooking(ctx context.Context, msg *tgbotcrmapi.Message)
 }
 
 func (b *Bot) reply(chatID int64, text string) {
-	msg := tgbotcrmapi.NewMessage(chatID, text)
+	msg := tgbotapi.NewMessage(chatID, text)
 	_, _ = b.bot.Send(msg)
 }
 
@@ -478,11 +478,11 @@ func (b *Bot) isManager(id int64) bool {
 }
 
 func (b *Bot) answerCallback(id string) error {
-	_, err := b.bot.Request(tgbotcrmapi.NewCallback(id, ""))
+	_, err := b.bot.Request(tgbotapi.NewCallback(id, ""))
 	return err
 }
 
-func (b *Bot) startBookingFlow(ctx context.Context, msg *tgbotcrmapi.Message) {
+func (b *Bot) startBookingFlow(ctx context.Context, msg *tgbotapi.Message) {
 	if msg == nil {
 		return
 	}
@@ -495,40 +495,40 @@ func (b *Bot) startBookingFlow(ctx context.Context, msg *tgbotcrmapi.Message) {
 		b.reply(msg.Chat.ID, "Нет доступных кабинетов")
 		return
 	}
-	rows := make([][]tgbotcrmapi.InlineKeyboardButton, 0, len(cabs))
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(cabs))
 	for _, c := range cabs {
-		rows = append(rows, []tgbotcrmapi.InlineKeyboardButton{
-			tgbotcrmapi.NewInlineKeyboardButtonData(c.Name, fmt.Sprintf("cab:%d", c.ID)),
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{
+			tgbotapi.NewInlineKeyboardButtonData(c.Name, fmt.Sprintf("cab:%d", c.ID)),
 		})
 	}
-	out := tgbotcrmapi.NewMessage(msg.Chat.ID, "Выберите кабинет:")
-	out.ReplyMarkup = tgbotcrmapi.InlineKeyboardMarkup{InlineKeyboard: rows}
+	out := tgbotapi.NewMessage(msg.Chat.ID, "Выберите кабинет:")
+	out.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{InlineKeyboard: rows}
 	_, _ = b.bot.Send(out)
 }
 
 func (b *Bot) sendItems(chatID int64) {
-	rows := [][]tgbotcrmapi.InlineKeyboardButton{
-		{tgbotcrmapi.NewInlineKeyboardButtonData(itemNone, "item:none")},
+	rows := [][]tgbotapi.InlineKeyboardButton{
+		{tgbotapi.NewInlineKeyboardButtonData(itemNone, "item:none")},
 	}
 	if b.api != nil {
-		items, err := b.crmapi.ListItems(context.Background())
+		items, err := b.api.ListItems(context.Background())
 		if err == nil {
 			for _, it := range items {
-				rows = append(rows, []tgbotcrmapi.InlineKeyboardButton{
-					tgbotcrmapi.NewInlineKeyboardButtonData(it.Name, fmt.Sprintf("item:%s", it.Name)),
+				rows = append(rows, []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData(it.Name, fmt.Sprintf("item:%s", it.Name)),
 				})
 			}
 		}
 	}
-	out := tgbotcrmapi.NewMessage(chatID, "Выберите аппарат (или без аппарата):")
-	out.ReplyMarkup = tgbotcrmapi.InlineKeyboardMarkup{InlineKeyboard: rows}
+	out := tgbotapi.NewMessage(chatID, "Выберите аппарат (или без аппарата):")
+	out.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{InlineKeyboard: rows}
 	_, _ = b.bot.Send(out)
 }
 
 func (b *Bot) sendCalendar(chatID int64) {
 	now := time.Now()
 	markup := GenerateCalendarKeyboard(now.Year(), int(now.Month()), nil)
-	out := tgbotcrmapi.NewMessage(chatID, "Выберите дату:")
+	out := tgbotapi.NewMessage(chatID, "Выберите дату:")
 	out.ReplyMarkup = markup
 	_, _ = b.bot.Send(out)
 }
@@ -555,7 +555,7 @@ func (b *Bot) sendTimeSlots(ctx context.Context, chatID, userID int64) {
 		label := fmt.Sprintf("%s-%s", s.StartTime, s.EndTime)
 		ui = append(ui, TimeSlot{Label: label, CallbackData: fmt.Sprintf("slot:%s", label), Available: s.Available})
 	}
-	out := tgbotcrmapi.NewMessage(chatID, "Выберите время:")
+	out := tgbotapi.NewMessage(chatID, "Выберите время:")
 	out.ReplyMarkup = GenerateTimeSlotsKeyboard(ui, st.Draft.Date)
 	_, _ = b.bot.Send(out)
 }
@@ -569,18 +569,18 @@ func (b *Bot) sendConfirm(chatID, userID int64) {
 	text := fmt.Sprintf("Проверьте данные:\n\nКабинет: %s\nАппарат: %s\nДата: %s\nВремя: %s\nКлиент: %s\nТелефон: %s\n\nПодтвердить?",
 		st.Draft.CabinetName, item, st.Draft.Date, st.Draft.TimeLabel, st.Draft.ClientName, st.Draft.ClientPhone)
 
-	rows := [][]tgbotcrmapi.InlineKeyboardButton{
+	rows := [][]tgbotapi.InlineKeyboardButton{
 		{
-			tgbotcrmapi.NewInlineKeyboardButtonData("✅ Подтвердить", "confirm"),
-			tgbotcrmapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
+			tgbotapi.NewInlineKeyboardButtonData("✅ Подтвердить", "confirm"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "cancel"),
 		},
 	}
-	out := tgbotcrmapi.NewMessage(chatID, text)
-	out.ReplyMarkup = tgbotcrmapi.InlineKeyboardMarkup{InlineKeyboard: rows}
+	out := tgbotapi.NewMessage(chatID, text)
+	out.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{InlineKeyboard: rows}
 	_, _ = b.bot.Send(out)
 }
 
-func (b *Bot) finalizeBooking(ctx context.Context, cq *tgbotcrmapi.CallbackQuery, st *userState) error {
+func (b *Bot) finalizeBooking(ctx context.Context, cq *tgbotapi.CallbackQuery, st *userState) error {
 	if cq == nil || cq.Message == nil {
 		return fmt.Errorf("missing callback message")
 	}
@@ -696,17 +696,17 @@ func filterDigits(s string) string {
 }
 
 func (b *Bot) notifyManagersNewBooking(id int64, cabinet, item, date, timeLabel, clientName, clientPhone string) {
-	rows := [][]tgbotcrmapi.InlineKeyboardButton{
+	rows := [][]tgbotapi.InlineKeyboardButton{
 		{
-			tgbotcrmapi.NewInlineKeyboardButtonData("✅ Approve", fmt.Sprintf("mgr:approve:%d", id)),
-			tgbotcrmapi.NewInlineKeyboardButtonData("❌ Reject", fmt.Sprintf("mgr:reject:%d", id)),
+			tgbotapi.NewInlineKeyboardButtonData("✅ Approve", fmt.Sprintf("mgr:approve:%d", id)),
+			tgbotapi.NewInlineKeyboardButtonData("❌ Reject", fmt.Sprintf("mgr:reject:%d", id)),
 		},
 	}
 	text := fmt.Sprintf("Новая заявка #%d\nКабинет: %s\nАппарат: %s\nДата: %s\nВремя: %s\nКлиент: %s\nТелефон: %s",
 		id, cabinet, item, date, timeLabel, clientName, clientPhone)
 	for mgrID := range b.managers {
-		msg := tgbotcrmapi.NewMessage(mgrID, text)
-		msg.ReplyMarkup = tgbotcrmapi.InlineKeyboardMarkup{InlineKeyboard: rows}
+		msg := tgbotapi.NewMessage(mgrID, text)
+		msg.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{InlineKeyboard: rows}
 		_, _ = b.bot.Send(msg)
 	}
 }
@@ -721,6 +721,6 @@ func (b *Bot) notifyBookingStatus(ctx context.Context, bookingID int64, status s
 	if err := row.Scan(&telegramID); err != nil {
 		return
 	}
-	msg := tgbotcrmapi.NewMessage(telegramID, fmt.Sprintf("Статус заявки #%d: %s", bookingID, status))
+	msg := tgbotapi.NewMessage(telegramID, fmt.Sprintf("Статус заявки #%d: %s", bookingID, status))
 	_, _ = b.bot.Send(msg)
 }
